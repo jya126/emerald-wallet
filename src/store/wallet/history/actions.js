@@ -63,75 +63,34 @@ export function init(chainId: number) {
   };
 }
 
-export function refreshTransactions(hashes: Array<string>) {
-  return (dispatch, getState, api) => {
-    api.geth.ext.getTransactions(hashes).then((txs) => {
-      const found = [];
-      txs.forEach((t) => {
-        if (t.result && typeof t.result === 'object') {
-          found.push(t.result);
-        }
-      });
-
-      dispatch({
-        type: ActionTypes.UPDATE_TXS,
-        transactions: found,
-      });
-
-      // update timestamps
-      const state = getState();
-      found.forEach((t) => {
-        const tx = selectByHash(state, t.hash);
-        if (tx && !tx.get('timestamp')) {
-          api.geth.eth.getBlock(tx.get('blockNumber'))
-            .then((block) => dispatch({
-              type: ActionTypes.UPDATE_TX,
-              tx: { hash: t.hash, timestamp: block.timestamp },
-            }));
-        }
-      });
-    });
-  };
-}
-
-export function refreshTransaction(hash: string) {
-  return (dispatch, getState, api) =>
-    api.geth.eth.getTransaction(hash).then((result) => {
-      if (!result) {
-        log.info(`No tx for hash ${hash}`);
-        dispatch({
-          type: ActionTypes.TRACKED_TX_NOTFOUND,
-          hash,
-        });
-      } else if (typeof result === 'object') {
-        dispatch({
-          type: ActionTypes.UPDATE_TX,
-          tx: result,
-        });
-
-        /** TODO: Check for input data **/
-        if ((result.creates !== undefined) && (isAddress(result.creates) === undefined)) {
-          dispatch({
-            type: 'CONTRACT/UPDATE_CONTRACT',
-            tx: result,
-            address: result.creates,
-          });
-        }
-      }
-      persistTransactions(getState());
-    });
-}
-
 /**
  * Refresh only tx with totalRetries <= 10
  */
 export function refreshTrackedTransactions() {
-  return (dispatch, getState) => {
+  return (dispatch, getState, api) => {
+    const state = getState();
     const hashes = allTrackedTxs(getState())
       .filter((tx) => tx.get('totalRetries', 0) <= 10)
+      .filter((tx) => state.wallet.settings.get('numConfirmations') < tx.get('blockNumber') - state.network.get('currentBlock').get('height'))
       .map((tx) => tx.get('hash'));
 
-    chunk(hashes.toArray(), 20).forEach((group) => dispatch(refreshTransactions(group)));
+    return api.geth.ext.getTransactions(hashes).then((result) => {
+      const transactions = result.map((tx) => tx.result);
+      dispatch({
+        type: ActionTypes.UPDATE_TXS,
+        transactions,
+      });
+      /** TODO: Check for input data **/
+      if ((result.creates !== undefined) && (isAddress(result.creates) === undefined)) {
+        dispatch({
+          type: 'CONTRACT/UPDATE_CONTRACT',
+          tx: result,
+          address: result.creates,
+        });
+      }
+
+      return persistTransactions(getState());
+    });
   };
 }
 

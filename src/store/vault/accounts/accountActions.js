@@ -37,7 +37,7 @@ export function loadAccountBalance(address: string) {
     // Tokens
     const tokens = getState().tokens;
     if (!tokens.get('loading')) {
-      dispatch(loadTokensBalances(address));
+      dispatch(loadTokensBalances([address]));
     }
   };
 }
@@ -48,24 +48,16 @@ export function loadAccountBalance(address: string) {
 function fetchBalances(addresses: Array<string>) {
   return (dispatch, getState, api) => {
     api.geth.ext.getBalances(addresses).then((balances) => {
-      addresses.forEach((address) => {
-        if (balances[address]) {
-          dispatch({
-            type: ActionTypes.SET_BALANCE,
-            accountId: address,
-            value: balances[address],
-          });
-        }
+      dispatch({
+        type: ActionTypes.SET_BALANCES,
+        accountBalances: addresses.map((addr) => ({ accountId: addr, balance: balances[addr] })),
       });
-    });
 
-    // ERC20 Tokens
-    const tokens = getState().tokens;
-    if (!tokens.get('loading')) {
-      addresses.forEach((address) => {
-        dispatch(loadTokensBalances(address));
-      });
-    }
+      const tokens = getState().tokens;
+      if (!tokens.get('loading')) {
+        dispatch(loadTokensBalances(addresses));
+      }
+    });
   };
 }
 
@@ -104,7 +96,7 @@ export function loadAccountsList() {
         accounts: result,
       });
       dispatch(fetchHdPaths());
-      dispatch(fetchBalances(result.map((account) => account.address)));
+      return dispatch(fetchBalances(result.map((account) => account.address)));
     });
   };
 }

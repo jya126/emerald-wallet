@@ -42,8 +42,12 @@ export function loadPeerCount() {
 
 export function loadAddressTransactions(...props) {
   return (dispatch, getState, api) => {
-    return api.geth.eth.getAddressTransactions(...props).then((result) => {
-      return api.geth.ext.getTransactions(result).then((txes) => {
+    return api.geth.eth.getAddressTransactions(...props).then((results) => {
+      const trackedTxs = getState().wallet.history.get('trackedTransactions');
+      const isAlreadyTracked = trackedTxs.find((tx) => results.indexOf(tx.get('hash')) !== -1);
+      if (isAlreadyTracked) { return null; }
+
+      return api.geth.ext.getTransactions(results).then((txes) => {
         return Promise.all(txes.map((tx) => dispatch(history.actions.trackTx(tx.result))));
       });
     }).catch((e) => {
